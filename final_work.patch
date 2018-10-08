@@ -1,0 +1,823 @@
+# HG changeset patch
+# User P Sudeepam <sudeepam.pandey@gmail.com>
+# Date 1533741863 -19800
+#      Wed Aug 08 20:54:23 2018 +0530
+# Node ID 5836b8c3062c723c34ce5d348d662045da83fc33
+# Parent  4bd60c9c6169c99a8d8a19f7bd077097773577d4
+# Parent  09ecb35fba566e18f237276bc495135f5f32ed2c
+provide correction suggestions for possibly misspelled identifiers (bug #46881)
+
+*scripts/help/__generate__.m: New function to generate possible correction suggestions for a misspelled Octave identifier by using a variation of the edit distance algorithm.
+
+*scripts/help/__suggestions__.m: New function to fetch the possible corrections for a misspelled identifier and to present them to the user with appropriate messages.
+
+*scripts/help/command_correction.m: New function to provide the user, an easy interface to switch off or switch on the correction suggestion feature.
+
+*scripts/help/module.mk: Include the new functions in the module makefile.
+
+*scripts/help/__unimplemented__.m: Check for possible correction suggestions whenever a command is not recognized as a valid unimplemented Octave command.
+
+*libinterp/corefcn/graphics.cc: Add a new missing_property_hook function. Replace the error calls with a call to the correction suggestion feature whenever an undefined graphic property is encountered.
+
+*examples/data/func.db: New database file for the correction suggestion feature. Contains category wise separated lists of identifiers from core Octave and Octave forge.
+
+*examples/data/ALTERDB.md: Documentation about how to alter the contents of the database file.
+
+*examples/module.mk: Include the database file in the module makefile.
+
+diff -r 4bd60c9c6169 -r 5836b8c3062c examples/data/ALTERDB.md
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/examples/data/ALTERDB.md	Wed Aug 08 20:54:23 2018 +0530
+@@ -0,0 +1,169 @@
++This file describes the procedure that should be followed in
++order to alter the contents of the `func.db` database file.
++
++
++DESCRIPTION OF THE DATABASE FILE
++================================
++
++[".../examples/data/func.db"] is a database file and contains
++an organized list of identifiers from core Octave and Octave
++forge.
++
++The design of the database file is such that the identifiers
++belonging to different categories are stored in different
++structures and are alphabetically separated as fields of
++those structures.
++
++For example, the database contains a structure called `control`
++which holds all the identifiers of the control package of
++Octave forge (but the identifiers of the control package only),
++then, there is a separate structure called `core` which holds
++all the identifiers of core Octave only, and then, there is
++another structure called `signal` which holds the identifiers
++of the signal package of Octave forge only, and so on.
++
++The field, `a` of the control structure (accessed by typing
++`control.a`) contains the list of all those identifiers of the
++control package whose names start with the letter `a`. The
++field b (accessed by typing control.b) contains the list of all
++those identifiers of the control package whose names start with
++the letter `b`, and so on. Similar architecture has been
++followed for all the structures of the database. These
++structures also contain an additional field called `def`. This
++field contains the names of those identifiers of that specific
++package whose names do not start with an English alphabet.
++
++It is also important to mention that the identifiers within a
++particular field, of a particular structure, have been listed
++in columns in a `1 x no. of identifiers` dimensional cell
++array. For example, within `control.f`, the identifiers are
++listed as {"foo_1", "foo_2", "foo_3"} ans so on.
++
++Lastly, the database also has an additional variable called
++`dbpath` that stores the current path of the database file.
++The variable `dbpath` is a character array.
++
++
++USE OF THIS DATABASE FILE
++=========================
++
++The use of this database file is as follows:
++
++The identifiers from this database file are compared against
++a misspelled identifier by the correction suggestion feature
++of Octave to find the close matches of the misspelled Octave
++identifier.
++
++The correction suggestion feature of Octave attempts to display
++possible corrections to the users whenever they misspell an
++identifier while working on Octave.
++
++
++THE PROCEDURE TO ADD A NEW IDENTIFIER TO A GIVEN PACKAGE OF THE DATABASE FILE
++=============================================================================
++
++Suppose we have to add a new identifier called "foo" to the
++"bar" package of octave. To alter the database, there are
++two things that need to be kept in mind.
++
++1) The letter with which the name of the identifier starts.
++   In this case, it is `f`.
++
++2) The name of the structure that represents the `bar` package
++   in the database file. The exact naming of the structures is
++   described below, however, in this example, we consider the
++   most common case and assume this name to be `bar`.
++
++Note: For most of the Octave-forge packages, the name of the
++----  structure that represents that package in the database
++      and the name of the forge package are same. However,
++      the following exceptions had to be made:
++
++    - For a forge package having a name of the sort, "abc-xyz"
++      (ex: instrument-control). The structure representing the
++      package has a name of the sort "abc_xyz". That is, all the
++      dashes in the package name are replaced by underscores in
++      the name of the structure (ex: instrument_control). This
++      is done because dashes cannot be included in valid variable
++      names of octave.
++
++    - The structure representing the identifiers of core Octave
++      has the name `core`.
++
++    - The structure containing the list of graphic properties
++      has the name `gprop`.
++
++The following set of commands should now be used to add the
++identifier `foo` to the `bar` package/category of Octave:
++
++## Please use the variable `dbpath` only
++## to store the path of the database file.
++
++>> dbpath = fopen (fopen ("func.db"));                # fetch the path of the database file
++>> load (dbpath);                                     # load the entire database
++
++>> len = length (bar.f);                              # loop this part when multiple...
++>> bar.f(1, len + 1) = {"foo"};                       # ...identifiers are to be added
++
++>> clear len;                                         # remove additional variables
++>> save ("-binary", dbpath);                          # save the edited database
++
++
++THE PROCEDURE TO ADD A NEW PACKAGE TO THE DATABASE FILE
++=======================================================
++
++## Please use the variable `dbpath` only
++## to store the path of the database file.
++
++>> dbpath = fopen (fopen ("func.db"));                # fetch the path of the database file
++>> load (dbpath);                                     # load the entire database
++
++## Create a new structure whose name follows
++## the brief naming guidelines that are mentioned
++## above. Make sure that the architecture of the
++## structure is similar to what has been described
++## above. If the new package has to be included
++## within the scope of the command correction
++## feature be sure to make the necessary changes
++## to "scripts/help/__generate__.m" function file.
++
++## clear all the additional variables that were
++## created when generating a structure for the new
++## package.
++
++>> save ("-binary", dbpath);                          # save the modified database
++
++
++THE PROCEDURE TO REMOVE PACKAGE FROM THE DATABASE FILE
++======================================================
++
++Suppose a package called `foo` has to removed from the database
++The following commands can be used to do this.
++
++## Please use the variable `dbpath` only
++## to store the path of the database file.
++
++>> dbpath = fopen (fopen ("func.db"));                # fetch the path of the database file
++>> load (dbpath);                                     # load the entire database
++>> clear foo;
++>> save ("-binary", dbpath);                          # save the modified database
++
++
++===========================================================================================
++Note:
++----
++The following procedure should be used to alter the contents
++of the database pre-compilation. The similar set of commands
++may be used to alter the database post-compilation as well,
++however, additional permissions may be required when altering
++the database post-compilation. In a Linux machine for example,
++superuser privileges will be required. Using the terminal, the
++following commands can be used to open Octave as a superuser.
++
++~$ sudo octave              #if the preferred interface is CLI
++OR
++~$ sudo octave --gui        #if the preferred interface is GUI
++
++It is worth mentioning that altering the database pre-compilation
++does not change the build procedures in any way.
++============================================================================================
+diff -r 4bd60c9c6169 -r 5836b8c3062c examples/data/func.db
+Binary file examples/data/func.db has changed
+diff -r 4bd60c9c6169 -r 5836b8c3062c examples/module.mk
+--- a/examples/module.mk	Tue Aug 07 22:12:50 2018 -0700
++++ b/examples/module.mk	Wed Aug 08 20:54:23 2018 +0530
+@@ -5,7 +5,8 @@
+ %canon_reldir%_MAINTAINERCLEANFILES =
+ 
+ %canon_reldir%_data_SRC = \
+-   %reldir%/data/penny.mat
++   %reldir%/data/penny.mat \
++   %reldir%/data/func.db
+ 
+ octdata_DATA += \
+   $(%canon_reldir%_data_SRC)
+diff -r 4bd60c9c6169 -r 5836b8c3062c libinterp/corefcn/graphics.cc
+--- a/libinterp/corefcn/graphics.cc	Tue Aug 07 22:12:50 2018 -0700
++++ b/libinterp/corefcn/graphics.cc	Wed Aug 08 20:54:23 2018 +0530
+@@ -64,9 +64,12 @@ along with Octave; see the file COPYING.
+ #include "unwind-prot.h"
+ #include "utils.h"
+ #include "octave-default-image.h"
++#include "variables.h"
+ 
+ // forward declarations
+ static octave_value xget (const graphics_handle& h, const caseless_str& name);
++void err_unknown_property (const std::string& func,
++                           const std::string& obj, const std::string& prop);
+ 
+ OCTAVE_NORETURN static
+ void
+@@ -102,8 +105,7 @@ validate_property_name (const std::strin
+   size_t num_matches = matches.size ();
+ 
+   if (num_matches == 0)
+-    error ("%s: unknown %s property %s",
+-           who.c_str (), what.c_str (), pname.c_str ());
++    err_unknown_property (who.c_str (), what.c_str (), pname.c_str ());
+   else if (num_matches > 1)
+     {
+       string_vector sv (matches);
+@@ -3097,7 +3099,7 @@ base_properties::get_dynamic (const case
+     all_props.find (pname);
+ 
+   if (it == all_props.end ())
+-    error (R"(get: unknown property "%s")", pname.c_str ());
++    err_unknown_property ("get", "\b", pname.c_str());
+ 
+   return it->second.get ();
+ }
+@@ -3139,7 +3141,7 @@ base_properties::set_dynamic (const case
+   auto it = all_props.find (pname);
+ 
+   if (it == all_props.end ())
+-    error (R"(set: unknown property "%s")", pname.c_str ());
++    err_unknown_property ("set", "\b", pname.c_str());
+ 
+   it->second.set (val);
+ 
+@@ -3155,7 +3157,7 @@ base_properties::get_property_dynamic (c
+     all_props.find (pname);
+ 
+   if (it == all_props.end ())
+-    error (R"(get_property: unknown property "%s")", pname.c_str ());
++    err_unknown_property ("get_property", "\b", pname.c_str());
+ 
+   return it->second;
+ }
+@@ -11332,7 +11334,7 @@ being @qcode{"portrait"}.
+                 }
+             }
+           else
+-            error ("set: unknown property");
++            err_unknown_property ("set", "\b", property);
+         }
+       else if (nargin == 1)
+         {
+@@ -12910,3 +12912,59 @@ uint8 array.
+ 
+   return ovl (go.get_toolkit ().get_pixels (go));
+ }
++
++// For the correction suggestion feature
++
++static std::string Vmissing_property_hook = "__suggestions__";
++
++DEFUN (missing_property_hook, args, nargout,
++       doc: /* -*- texinfo -*-
++@deftypefn  {} {@var{val} =} missing_property_hook ()
++@deftypefnx {} {@var{old_val} =} missing_property_hook (@var{new_val})
++@deftypefnx {} {} missing_property_hook (@var{new_val}, "local")
++Query or set the internal variable that specifies the function to call when
++an unknown identifier is requested.
++
++When called from inside a function with the @qcode{"local"} option, the
++variable is changed locally for the function and any subroutines it calls.
++The original variable value is restored when exiting the function.
++@seealso{missing_component_hook}
++@end deftypefn */)
++{
++  return SET_INTERNAL_VARIABLE (missing_property_hook);
++}
++
++void
++maybe_missing_property_hook (const std::string& name)
++{
++  // Don't do this if we're handling errors.
++  if (buffer_error_messages == 0 && ! Vmissing_property_hook.empty ())
++    {
++      octave::symbol_table& symtab
++        = octave::__get_symbol_table__ ("maybe_missing_property_hook");
++
++      octave_value val = symtab.find_function (Vmissing_property_hook);
++
++      if (val.is_defined ())
++        {
++          // Ensure auto-restoration.
++          octave::unwind_protect frame;
++          frame.protect_var (Vmissing_property_hook);
++
++          // Clear the variable prior to calling the function.
++          const std::string func_name = Vmissing_property_hook;
++          Vmissing_property_hook.clear ();
++
++          // Call.
++          octave::feval (func_name, octave_value (name));
++        }
++    }
++}
++
++void
++err_unknown_property (const std::string& func, const std::string& obj, const std::string& prop)
++{
++  maybe_missing_property_hook (prop);
++  error_with_id ("Octave:unknown-graphics-property",
++                 "%s: unknown %s property %s", func.c_str (), obj.c_str (), prop.c_str ());
++}
+diff -r 4bd60c9c6169 -r 5836b8c3062c scripts/help/__generate__.m
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/scripts/help/__generate__.m	Wed Aug 08 20:54:23 2018 +0530
+@@ -0,0 +1,282 @@
++## Copyright (C) 2018 P Sudeepam
++##
++## This file is part of Octave.
++##
++## Octave is free software: you can redistribute it and/or modify it
++## under the terms of the GNU General Public License as published by
++## the Free Software Foundation, either version 3 of the License, or
++## (at your option) any later version.
++##
++## Octave is distributed in the hope that it will be useful, but
++## WITHOUT ANY WARRANTY; without even the implied warranty of
++## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++## GNU General Public License for more details.
++##
++## You should have received a copy of the GNU General Public License
++## along with Octave; see the file COPYING. If not, see
++## <https://www.gnu.org/licenses/>.
++
++## -*- texinfo -*-
++## @deftypefn {} {[@var{sug}, @var{dis}] =} generate (@var{fcn})
++## @deftypefnx {} {[@var{sug}, @var{dis}] =} generate (@var{fcn}, @var{dum})
++## Generate corrections for the possibly misspelled string @var{fcn}.
++##
++## Each row of @var{sug} contains a possible correction for the
++## possibly misspelled string @var{fcn} and each corresponding row of
++## @var{dis} contains the edit distance between the correction and
++## the misspelling @var{fcn}. @var{dum} is a dummy variable whose presence
++## or absence decides whether the suggestions are to be generated
++## for an unrecognized command or an unrecognized graphic property.
++##
++## This function is not called by users, but by the
++## '__suggestions__.m' function file.
++##
++## @seealso{__suggestions__}
++## @end deftypefn
++
++function [sug dis] = __generate__ (fcn, dum)
++
++  sug = " ";
++  dis = 0;
++  val = fcn(1,1); # Stores the first letter of the misspelling
++  warning ("off", "Octave:data-file-in-path");
++
++  if (nargin == 1) # Suggestions for a misspelled graphic property is required
++    ## Load a structure containing all the graphic properties
++    ## and generate an initial list of possible corrections by
++    ## fetching all those properties whose first letter is same
++    ## as the first letter of the misspelling.
++    load ("func.db", "gprop");
++    initlist = check_first_letter (gprop, val);
++
++  elseif (nargin == 2) # Suggestions for a misspelled command is required
++      ## Load a structure containing all the identifiers of core
++      ## octave and generate an initial list of possible corrections
++      ## by fetching all those identifiers whose first letter is same
++      ## as the first letter of the misspelling.
++      load ("func.db", "core");
++      initlist = check_first_letter (core, val);
++
++      instpack = pkg ("list"); # Stores information about the installed packages
++      for i = 1 : length (instpack)
++        struc = cell2mat (instpack(1,i));
++        ## Check for the loaded packages and add to the initial list,
++        ## all those identifiers from the loaded packages whose first
++        ## letter is same as the first letter of the misspelling.
++        if (struc.loaded == 1)
++          ## The names of some of the packages cannot be used as valid variable
++          ## names and so they have been stored with a slightly different
++          ## name in the database. Therefore, these cannot be loaded directly
++          ## using the struc.name command and must be loaded separately.
++          if (strcmpi (struc.name, "instrument-control"))
++            package = load ("func.db", "instrument_control");
++
++          elseif (strcmpi (struc.name, "fuzzy-logic-toolkit"))
++            package = load ("func.db", "fuzzy_logic_toolkit");
++
++          elseif (strcmpi (struc.name, "image-aquisition"))
++            package = load ("func.db", "image_aquisition");
++
++          elseif (strcmpi (struc.name, "level-set"))
++            package = load ("func.db", "level_set");
++
++          elseif (strcmpi (struc.name, "linear-algebra"))
++            package = load ("func.db", "linear_algebra");
++
++          elseif (strcmpi (struc.name, "fem-fenics"))
++            package = load ("func.db", "fem_fenics");
++
++          elseif (strcmpi (struc.name, "data-smoothing"))
++            package = load ("func.db", "data_smoothing");
++
++          else
++            package = load ("func.db", struc.name);
++
++          endif
++
++          package = struct2cell (package);
++          package = cell2mat (package);
++          packlist = check_first_letter (package, val);
++          initlist = [initlist, packlist];
++        endif
++      endfor
++    endif
++
++  ## Reduce the number of entries in the initial list by removing
++  ## all those unnecessary entries that require more that two additions
++  ## or deletions. This is done for misspellings of all lengths and
++  ## further improves the speed of the code but is particularly
++  ## useful when the length of the misspelling is large (say, >12).
++
++  lf = length (fcn);
++  c = 1; #c is a counter
++  funclist = {};
++
++  for i = 1 : length (initlist)
++    li = length (cell2mat (initlist(i)));
++    if (lf - 2 <= li && li <= lf + 2)
++      funclist(c) = initlist(i);
++      c++;
++    endif
++  endfor
++
++  ## Find the closest matches of the misspelling using the edit distance algorithm.
++  for i = 1 : length (funclist)
++    d = edit_distance (fcn, cell2mat (funclist(i)));
++    if (d == 1 || d == 2)
++      dis = [dis; d];
++      sug = [sug; cell2mat(funclist(i))];
++    endif
++  endfor
++
++  ## Store the suggestions and the edit distances to return
++  dis = dis(2 : end);
++  sug = sug(2 : end, :);
++
++  ## Switch on the warning that was temporarily switched off
++  warning ("on", "Octave:data-file-in-path");
++
++endfunction
++
++## Return a list of identifers whose first letter
++## is same as the first letter of the misspelling.
++
++## We have assumed that the user never mistypes
++## the first letter of a command. It is a reasonable
++## assumption and it drastically improves the speed
++## of the algorithm by reducing the sample space.
++
++function initlist = check_first_letter (packname, val)
++
++  switch val
++
++    case {"a" "A"}
++      initlist = packname.a;
++
++    case {"b" "B"}
++      initlist = packname.b;
++
++    case {"c" "C"}
++      initlist = packname.c;
++
++    case {"d" "D"}
++      initlist = packname.d;
++
++    case {"e" "E"}
++      initlist = packname.e;
++
++    case {"f" "F"}
++      initlist = packname.f;
++
++    case {"g" "G"}
++      initlist = packname.g;
++
++    case {"h" "H"}
++      initlist = packname.h;
++
++    case {"i" "I"}
++      initlist = packname.i;
++
++    case {"j" "J"}
++      initlist = packname.j;
++
++    case {"k" "K"}
++      initlist = packname.k;
++
++    case {"l" "L"}
++      initlist = packname.l;
++
++    case {"m" "M"}
++      initlist = packname.m;
++
++    case {"n" "N"}
++      initlist = packname.n;
++
++    case {"o" "O"}
++      initlist = packname.o;
++
++    case {"p" "P"}
++      initlist = packname.p;
++
++    case {"q" "Q"}
++      initlist = packname.q;
++
++    case {"r" "R"}
++      initlist = packname.r;
++
++    case {"s" "S"}
++      initlist = packname.s;
++
++    case {"t" "T"}
++      initlist = packname.t;
++
++    case {"u" "U"}
++      initlist = packname.u;
++
++    case {"v" "V"}
++      initlist = packname.v;
++
++    case {"w" "W"}
++      initlist = packname.w;
++
++    case {"x" "X"}
++      initlist = packname.x;
++
++    case {"y" "Y"}
++      initlist = packname.y;
++
++    case {"z" "Z"}
++      initlist = packname.z;
++
++    otherwise
++      initlist = packname.def;
++
++  endswitch
++endfunction
++
++## Calculate the Edit Distance between the
++## possible suggestion and the misspelling
++
++## Edit Distance is a way to quantify how dissimilar
++## two strings are. Given two strings str1 and str2,
++## the edit distance between them is defined as the
++## minimum number of operations required to convert
++## string str1 to str2 (or vice versa). Generally,
++## the following operations are used:
++##
++## -Replacing one character of a string by another.
++## -Deleting a character from a given string.
++## -Adding a character to a given string.
++
++function [dis, mat] = edit_distance (str1, str2)
++
++  m = length (str1);
++  n = length (str2);
++  mat = zeros (m+1, n+1); # The matrix used for the computation of Edit Distance through dynamic programming.
++  mat(1, :) = [0: 1: n];
++  mat(:, 1) = [0: 1: m];
++
++  for i = 1:m
++    for j = 1:n
++      if (str1(i) == str2(j))
++        mat(i+1, j+1) = mat(i, j);
++      else
++        mat(i+1, j+1) = 1 + min (min (mat(i+1, j), mat(i, j)), mat(i, j+1));
++      endif
++    endfor
++  endfor
++
++  dis = mat(m+1, n+1); # Stores the edit distance between str1 and str2
++
++endfunction
++
++%!test
++%! [sug, dis] = __generate__("cld", 1);
++%! assert (sug, ["cat"; "cd"; "cell"; "clc"; "cos"; "cgs"; "cla"; "clf";
++%!                "cond"; "cosd"; "cot"; "cotd"; "cov"; "csc"; "cscd"])
++%! assert (dis, [2; 1; 2; 1; 2; 2; 1; 1; 2; 2; 2; 2; 2; 2; 2])
++
++%!test
++%! [sug, dis] = __generate__("paprorientation");
++%! assert (sug, "paperorientation")
++%! assert (dis, 1)
+diff -r 4bd60c9c6169 -r 5836b8c3062c scripts/help/__suggestions__.m
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/scripts/help/__suggestions__.m	Wed Aug 08 20:54:23 2018 +0530
+@@ -0,0 +1,98 @@
++## Copyright (C) 2018 P Sudeepam
++##
++## This file is part of Octave.
++##
++## Octave is free software: you can redistribute it and/or modify it
++## under the terms of the GNU General Public License as published by
++## the Free Software Foundation, either version 3 of the License, or
++## (at your option) any later version.
++##
++## Octave is distributed in the hope that it will be useful, but
++## WITHOUT ANY WARRANTY; without even the implied warranty of
++## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++## GNU General Public License for more details.
++##
++## You should have received a copy of the GNU General Public License
++## along with Octave; see the file COPYING. If not, see
++## <https://www.gnu.org/licenses/>.
++
++## -*- texinfo -*-
++## @deftypefn {} {} __suggestions__ (@var{fcn})
++## @deftypefnx {} {} __suggestions__ (@var{fcn}, @var{dum})
++## Check if the correction suggestion feature is on/off. If on,
++## show some corrections for the possibly misspelled string
++## '@var{fcn}' to the user.
++##
++## @var{fcn} holds the possible misspelling and @var{dum} is a dummy
++## variable whose presence or absence decides whether the trigger
++## is an unrecognized command or an unrecognized graphic property.
++##
++## This function is not meant to be called by the users.
++##
++## @seealso{__unimplemented__, __generate__, command_correction}
++## @end deftypefn
++
++function __suggestions__(fcn, dum)
++
++  ## Use custom preference to check if the suggestion feature is on and
++  ## add the custom preference to the group 'Octave' if it is
++  ## unavailable (which basically happens, when the user makes a
++  ## typographic error for the first in a fresh install of Octave).
++  try
++    pref = getpref ("Octave", "autosuggestion");
++  catch err
++    if (strcmpi (err.message, "getpref: preference autosuggestion does not exist in GROUP Octave"))
++      addpref ("Octave", "autosuggestion", true);
++      pref = getpref ("Octave", "autosuggestion");
++    endif
++  end
++
++  ## Display possible corrections if the preference is
++  ## true (The feature is on) and do nothing otherwise.
++  if (pref == false)
++    return;
++  ## Misspellings of length = 1 are ignored and possible matches
++  ## for them are not calculated because it is less likely
++  ## that they were intended commands or graphic properties.
++  elseif (pref == true && length (fcn) >= 2)
++    ## sugg holds the possible suggestions and d the corresponding edit
++    ## distances. Possible suggestions have an edit distance = 1 or 2.
++
++    if (nargin == 1) # For graphic properties
++      [sugg d] = __generate__ (fcn);
++      trigger = "property";
++    elseif (nargin == 2) # For general commands
++      [sugg d] = __generate__ (fcn, dum);
++      trigger = "command";
++    endif
++
++    flag = 0; # Controls the printing format
++
++    ## Corrections for short misspellings (2 <= length <= 4) are shown
++    ## only if the edit distance = 1. For longer misspellings
++    ## (length >= 5), edit distance = 1 or 2 is accepted.
++    if (length (fcn) >= 5 && size (sugg, 1) != 0)
++      printf ("The %s '%s' is not recognized. Did you mean any of the following...\n", trigger, fcn);
++      disp (sugg);
++      flag = 1;
++
++    elseif (length (fcn) < 5)
++      for i = 1 : length (d) # If no suggestions were generated, this part would not run
++        if (d(i) == 1)
++          if (flag == 0)
++            printf ("The %s '%s' is not recognized. Did you mean any of the following...\n", trigger, fcn);
++            flag = 1;
++          endif
++          disp (sugg(i,:));
++        endif
++      endfor
++    endif
++  endif
++
++  if (flag == 1)
++    printf("\n")
++  endif
++
++endfunction
++
++%!test __suggestions__("")
+diff -r 4bd60c9c6169 -r 5836b8c3062c scripts/help/__unimplemented__.m
+--- a/scripts/help/__unimplemented__.m	Tue Aug 07 22:12:50 2018 -0700
++++ b/scripts/help/__unimplemented__.m	Wed Aug 08 20:54:23 2018 +0530
+@@ -491,6 +491,9 @@ function txt = __unimplemented__ (fcn)
+       else
+         is_matlab_function = false;
+         txt = "";
++        ## generate and display correction for the possibly misspelled
++        ## command 'fcn' if no match is found.
++        __suggestions__(fcn, 1);
+       endif
+   endswitch
+ 
+diff -r 4bd60c9c6169 -r 5836b8c3062c scripts/help/command_correction.m
+--- /dev/null	Thu Jan 01 00:00:00 1970 +0000
++++ b/scripts/help/command_correction.m	Wed Aug 08 20:54:23 2018 +0530
+@@ -0,0 +1,63 @@
++## Copyright (C) 2018 P Sudeepam
++##
++## This file is part of Octave.
++##
++## Octave is free software: you can redistribute it and/or modify it
++## under the terms of the GNU General Public License as published by
++## the Free Software Foundation, either version 3 of the License, or
++## (at your option) any later version.
++##
++## Octave is distributed in the hope that it will be useful, but
++## WITHOUT ANY WARRANTY; without even the implied warranty of
++## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
++## GNU General Public License for more details.
++##
++## You should have received a copy of the GNU General Public License
++## along with Octave; see the file COPYING. If not, see
++## <https://www.gnu.org/licenses/>.
++
++## -*- texinfo -*-
++## @deftypefn {} {} command_correction (@var{ch})
++## Switch off or switch on the correction suggestion
++## feature according to the choice specified by '@var{ch}'
++##
++## @seealso{__suggestions__, __generate__}
++## @end deftypefn
++
++function command_correction (ch)
++
++  ## Check if valid number of input arguments were passed
++  if (nargin != 1)
++    print_usage ();
++  endif
++
++  ## Check if allowed values were passed for the input arguments
++  ## and set the preference value or throw an error accordingly.
++  if (strcmpi (ch, "ON"))
++    ch = true;
++  elseif (strcmpi (ch, "OFF"))
++    ch = false;
++  else
++    error ("command_correction: allowed input values are 'ON' and 'OFF'");
++  endif
++
++  ## Set the desired value of the custom preference
++  setpref ("Octave", "autosuggestion", ch)
++
++endfunction
++
++%!test
++%! command_correction ("off")
++%! pref = getpref ("Octave", "autosuggestion");
++%! assert (pref, false)
++
++%!test
++%! command_correction ("ON")
++%! pref = getpref ("Octave", "autosuggestion");
++%! assert (pref, true)
++
++## Test input validation
++%!error command_correction ()
++%!error command_correction ("on", "off")
++%!error <command_correction: allowed input values are 'ON' and 'OFF'> command_correction (1)
++%!error <command_correction: allowed input values are 'ON' and 'OFF'> command_correction ("stop")
+diff -r 4bd60c9c6169 -r 5836b8c3062c scripts/help/module.mk
+--- a/scripts/help/module.mk	Tue Aug 07 22:12:50 2018 -0700
++++ b/scripts/help/module.mk	Wed Aug 08 20:54:23 2018 +0530
+@@ -7,11 +7,14 @@ FCN_FILE_DIRS += \
+   %reldir%/private/__strip_html_tags__.m
+ 
+ %canon_reldir%_FCN_FILES = \
++  %reldir%/__generate__.m \
+   %reldir%/__gripe_missing_component__.m \
+   %reldir%/__makeinfo__.m \
++  %reldir%/__suggestions__.m \
+   %reldir%/__unimplemented__.m \
+   %reldir%/ans.m \
+   %reldir%/bessel.m \
++  %reldir%/command_correction.m \
+   %reldir%/debug.m \
+   %reldir%/doc.m \
+   %reldir%/doc_cache_create.m \
