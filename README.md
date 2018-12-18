@@ -1,4 +1,4 @@
-# The Project
+# SUMMARY
 
 For my **Google Summer of Code (GSoC)** 2018 project, I wanted to make a feature for the command window of [GNU Octave](https://www.gnu.org/software/octave/), that could suggest possible corrections of typographic errors to its users. Read more about it [here](https://summerofcode.withgoogle.com/projects/#5362630907133952). Such a feature can be found at many other places as well, some common examples are, The Google search, The Linux terminal, The GCC compiler, etc.
 
